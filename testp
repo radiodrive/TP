@@ -1,0 +1,183 @@
+# To execute this yml file use this command in your local kubernetes environment `kubectl apply -f k8s-testproject.yaml
+#***************************************
+#SELENIUM STANDALONE CHROME
+#***************************************
+apiVersion: v1
+kind: Service
+metadata:
+  name: chrome
+  labels:
+    name: selenium-standalone-chrome
+spec:
+  selector:
+    app: selenium-standalone-chrome
+  ports:
+    - name: "chrome"
+      protocol: TCP    
+      port: 4444
+      targetPort: 4444
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chrome
+  labels:
+    app: selenium-standalone-chrome
+    name: selenium-standalone-chrome
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selenium-standalone-chrome
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: selenium-standalone-chrome
+        name: selenium-standalone-chrome
+      labels:
+        app: selenium-standalone-chrome
+        name: selenium-standalone-chrome                              
+    spec:
+      restartPolicy: Always        
+      containers:
+        - image: selenium/standalone-chrome
+          name: chrome       
+          ports:
+            - containerPort: 4444       
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir: { "medium": "Memory" }
+---          
+#***************************************
+#SELENIUM STANDALONE FIREFOX
+#*************************************** 
+apiVersion: v1
+kind: Service
+metadata:
+  name: firefox
+  labels:
+    name: selenium-standalone-firefox
+spec:
+  selector:
+    app: selenium-standalone-firefox
+  ports:
+    - name: "firefox"
+      protocol: TCP    
+      port: 4444
+      targetPort: 4444
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firefox
+  labels:
+    app: selenium-standalone-firefox
+    name: selenium-standalone-firefox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selenium-standalone-firefox
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: selenium-standalone-firefox
+        name: selenium-standalone-firefox
+      labels:
+        app: selenium-standalone-firefox
+        name: selenium-standalone-firefox                              
+    spec:
+      restartPolicy: Always        
+      containers:
+        - image: selenium/standalone-firefox
+          name: firefox       
+          ports:
+            - containerPort: 4444
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir: { "medium": "Memory" }
+---            
+#***************************************
+#TESTPROJECT AGENT
+#***************************************           
+apiVersion: v1
+kind: Service
+metadata:
+  name: testproject-agent
+  labels:
+    name: testproject-agent
+spec:
+  selector:
+    app: testproject-agent
+  ports:
+    - name: "8585"
+      port: 8585
+      targetPort: 8585
+    - name: "8686"
+      port: 8686
+      targetPort: 8686
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: testproject-agent
+    name: testproject-agent
+  name: testproject-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: testproject-agent
+  template:
+    metadata:
+      labels:
+        app: testproject-agent
+        name: testproject-agent
+    spec:
+      restartPolicy: Always    
+      containers:
+        - env:
+            - name: CHROME
+              value: chrome:4444
+            - name: FIREFOX
+              value: firefox:4444
+            - name: TP_AGENT_TEMP
+              value: "true"
+            - name: TP_AGENT_ALIAS # OPTIONAL variable that can be used for registering the agent with a custom alias.
+              value: "My First k8s Agent" 
+            - name: TP_API_KEY # The API key can be created in the TestProject Web Application (as described https://docs.testproject.io/testproject-integrations/integration-with-jenkins#creating-a-testproject-api-key).
+              valueFrom:
+                secretKeyRef:
+                  name: testproject-secrets
+                  key: XboNcaZNqpZ90tQoJu976CnWa5UEst-LBHvDooF1jps1  
+              valueFrom:
+                secretKeyRef:
+                  name: testproject-secrets
+                  key: XboNcaZNqpZ90tQoJu976CnWa5UEst-LBHvDooF1jps1             
+            - name: TP_SDK_PORT # Agent will listen on port 8686 for SDK connections
+              value: "8686"
+          image: testproject/agent:latest
+          name: testproject-agent
+          ports:
+            - containerPort: 8585
+            - containerPort: 8686  
+          livenessProbe: # The chrome pod take about ~30 sec to be ready. We need to start agent registration ONLY when booth Firefox and Chrome is available. 
+            exec:
+              command:
+              - /bin/sh
+              - -c              
+              - curl -sSL http://chrome:4444/wd/hub/status | jq -r '.value.ready' | grep "true" || exit 1              
+            initialDelaySeconds: 30
+            periodSeconds: 5
+   
